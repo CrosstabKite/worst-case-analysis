@@ -2,12 +2,14 @@
 Play with a Bayesian "worst-case" analysis of a click-through rate experiment.
 
 TODO
-- How compute posterior quantities?
 - How should non-experts specify the prior?
 - What's the meaning of the beta params again? Is `b` prior misses or the total?
+- Maybe compare the results with two different priors, or just have the prior controls be interactive...
+- Maybe compare with different amounts of data, or also interactive...
 
 NOTE
 - One main point is how robust the results are to the prior.
+- Maybe the prior comes from the previous stage of the rollout, if there is one.
 """
 
 import numpy as np
@@ -70,5 +72,12 @@ worst_case_threshold = 0.08
 worst_case_prob = posterior.cdf(worst_case_threshold)
 
 # 3. Given that theta is below some threshold, what's the distribution?
+post_sample = posterior.rvs(size=1000)
+worst_case_sample = post_sample[post_sample < worst_case_threshold]
+mean_worst_case_ctr = worst_case_sample.mean()
+
+fig = go.Figure(go.Histogram(x=worst_case_sample))
+fig.show()
+
 # 4. What else?
 
