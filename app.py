@@ -53,12 +53,12 @@ import scipy.stats as stats
 import streamlit as st
 
 
-## Basic setutp
+## Basic setup and app layout
 rng = np.random.default_rng(17)
-st.set_page_config(layout="wide")
+st.set_page_config(layout="wide")  # this needs to be the first Streamlit command called
 st.title("Worst-Case Analysis for Feature Rollouts")
-st.sidebar.header("Control Panel")
-left_col, right_col = st.beta_columns(2)
+st.sidebar.title("Control Panel")
+left_col, middle_col, right_col = st.beta_columns(3)
 
 
 ## Simulate data and the distribution domain
@@ -95,12 +95,15 @@ data = generate_data(
 
 
 ## User inputs on the control panel
+st.sidebar.subheader("Prior belief about the click rate")
 prior_sessions = st.sidebar.number_input(
     "Number of prior sessions", min_value=1, max_value=None, value=100, step=1
 )
 prior_click_rate = st.sidebar.slider(
     "Prior click rate", min_value=0.01, max_value=0.5, value=0.1
 )
+
+st.sidebar.subheader("Go/no-go decision criteria")
 worst_case_threshold = st.sidebar.slider(
     "Worst-case click rate threshold",
     min_value=0.01,
@@ -108,7 +111,9 @@ worst_case_threshold = st.sidebar.slider(
     value=0.08,
 )
 
-experiment_day = st.sidebar.slider("Experiment day", min_value=0, max_value=num_experiment_days, value=7)
+worst_case_max_proba = st.sidebar.slider(
+    "Max acceptable worst-case probability", min_value=0.0, max_value=1.0, value=0.1
+)
 
 
 ## Define the prior
@@ -117,47 +122,46 @@ prior_misses = prior_sessions - prior_clicks
 prior = stats.beta(prior_clicks, prior_misses)
 
 
-## Compute the posterior using all the data seen so far
-data = data.query("day < @experiment_day")
+## Show key results over time. The index value indicates the data for that day has been
+# observed.
+results = pd.DataFrame(
+    {
+        # 'mode': None,
+        "mean": None,
+        "q05": None,
+        "q95": None,
+        # 'worst_case_prob': None
+    },
+    index=range(-1, num_experiment_days),
+)
 
-
-## Show key statistics over time
-results = pd.DataFrame({
-    # 'mode': None,
-    'mean': None,
-    'q05': None,
-    'q95': None,
-    # 'worst_case_prob': None
-}, index=range(-1, experiment_day))
-
-# The prior
-results.loc[-1] = {
+results.loc[-1] = {  # this is the prior, at index -1.
     # 'mode': np.argmax()
-    'mean': prior.mean(),
-    'q05': prior.ppf(0.05),
-    'q95': prior.ppf(0.95)
+    "mean": prior.mean(),
+    "q05": prior.ppf(0.05),
+    "q95": prior.ppf(0.95),
 }
 
 post_clicks = prior_clicks
 post_misses = prior_misses
 
-for t in range(experiment_day):
-    post_clicks = post_clicks + data.loc[t, 'clicks']
-    post_misses = post_misses + data.loc[t, 'misses']
+for t in range(num_experiment_days):
+    post_clicks = post_clicks + data.loc[t, "clicks"]
+    post_misses = post_misses + data.loc[t, "misses"]
     posterior = stats.beta(post_clicks, post_misses)
 
     results.loc[t] = {
-        'mean': posterior.mean(),
-        'q05': posterior.ppf(0.05),
-        'q95': posterior.ppf(0.95)
+        "mean": posterior.mean(),
+        "q05": posterior.ppf(0.05),
+        "q95": posterior.ppf(0.95),
     }
-    
+
 
 ## Get the max useful click rate value to show in the distribution plots
 xmax = max(prior.ppf(0.99999), posterior.ppf(0.99999))
 distro_grid = np.linspace(0, xmax, 300)
 
- 
+
 ## Draw the prior
 prior_pdf = pd.DataFrame(
     {"click_rate": distro_grid, "prior_pdf": [prior.pdf(x) for x in distro_grid]}
@@ -212,40 +216,74 @@ rate_fig = base.mark_line(size=4, color="blue").encode(
 
 fig = alt.layer(volume_fig, rate_fig).resolve_scale(y="independent")
 
-right_col.subheader("Observed data")
-right_col.altair_chart(fig, use_container_width=True)
+middle_col.subheader("Observed data")
+middle_col.altair_chart(fig, use_container_width=True)
+
+
+## Draw the posterior zoomed in
+xmin = posterior.ppf(0.0001)
+xmax = posterior.ppf(0.9999)
+distro_grid = np.linspace(xmin, xmax, 300)
+
+posterior_pdf = pd.DataFrame({
+    'click_rate': distro_grid,
+    'posterior_pdf': [posterior.pdf(x) for x in distro_grid]
+})
+
+fig = (
+    alt.Chart(posterior_pdf)
+    .mark_line(size=4)
+    .encode(
+        x=alt.X('click_rate', title="Click rate", scale=alt.Scale(domain=[xmin, xmax])),
+        y=alt.Y('posterior_pdf', title="Probability density"),
+        tooltip=["click_rate", "posterior_pdf"],
+    )
+)
+
+middle_col.subheader("Zoomed-in posterior belief")
+middle_col.altair_chart(fig, use_container_width=True)
 
 
 ## Draw key results over time
 results.reset_index(inplace=True)
 out = results.melt(id_vars=['index'])
 
-fig = (
-    alt.Chart(out)
+ts_mean = (
+    alt.Chart(results)
     .mark_line()
     .encode(
         x="index",
-        y="value",
-        color="variable"
+        y="mean",
     )
 )
 
-right_col.subheader("Posterior quantities of interest")
+band = (
+    alt.Chart(results)
+    .mark_area(opacity=0.5)
+    .encode(
+        x='index',
+        y='q05',
+        y2='q95'
+    )
+)
+
+fig = alt.layer(ts_mean, band)
+
+right_col.subheader("Posterior over time")
 right_col.altair_chart(fig, use_container_width=True)
 
 
 ## Write key outputs in the control panel
-st.sidebar.header("Results")
+right_col.subheader("Results")
 
 observed_sessions = data['sessions'].sum()
 observed_clicks = data['clicks'].sum()
 observed_click_rate = observed_clicks / observed_sessions
 
-st.sidebar.markdown(f"**Observed sessions:** {observed_sessions}")
-st.sidebar.markdown(f"**Observed clicks:** {observed_clicks}")
-st.sidebar.markdown(f"**Observed click rate:** {observed_click_rate}")
-st.sidebar.markdown(f"**Most likely posterior click rate:** {17}")
-st.sidebar.markdown(f"**Mean posterior click rate:** {results.loc[6]['mean']}")
-st.sidebar.markdown(f"**90% credible region for click rate:** [{results.loc[6]['q05']}, {results.loc[6]['q95']}]")
-st.sidebar.markdown(f"**Probability click rate less than business threshold:** {13}")
-
+right_col.markdown(f"**Observed sessions:** {observed_sessions}")
+right_col.markdown(f"**Observed clicks:** {observed_clicks}")
+right_col.markdown(f"**Observed click rate:** {observed_click_rate}")
+right_col.markdown(f"**Most likely posterior click rate:** {17}")
+right_col.markdown(f"**Mean posterior click rate:** {results.loc[6]['mean']}")
+right_col.markdown(f"**90% credible region for click rate:** [{results.loc[6]['q05']}, {results.loc[6]['q95']}]")
+right_col.markdown(f"**Probability click rate less than business threshold:** {13}")
