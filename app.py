@@ -41,9 +41,7 @@ NOTE
 - Animate stepping through days of the experiment
 
 - Summary stats
-    - total amount of data observed so far, sessions and clicks
     - MAP estimate
-    - 95% CR
     - P(click rate less than threshold)
     - E(click rate | click rate less than threshold)
 """
@@ -59,7 +57,7 @@ import streamlit as st
 rng = np.random.default_rng(17)
 st.set_page_config(layout="wide")
 st.title("Worst-Case Analysis for Feature Rollouts")
-st.sidebar.title("Control Panel")
+st.sidebar.header("Control Panel")
 left_col, right_col = st.beta_columns(2)
 
 
@@ -234,3 +232,20 @@ fig = (
 
 right_col.subheader("Posterior quantities of interest")
 right_col.altair_chart(fig, use_container_width=True)
+
+
+## Write key outputs in the control panel
+st.sidebar.header("Results")
+
+observed_sessions = data['sessions'].sum()
+observed_clicks = data['clicks'].sum()
+observed_click_rate = observed_clicks / observed_sessions
+
+st.sidebar.markdown(f"**Observed sessions:** {observed_sessions}")
+st.sidebar.markdown(f"**Observed clicks:** {observed_clicks}")
+st.sidebar.markdown(f"**Observed click rate:** {observed_click_rate}")
+st.sidebar.markdown(f"**Most likely posterior click rate:** {17}")
+st.sidebar.markdown(f"**Mean posterior click rate:** {results.loc[6]['mean']}")
+st.sidebar.markdown(f"**90% credible region for click rate:** [{results.loc[6]['q05']}, {results.loc[6]['q95']}]")
+st.sidebar.markdown(f"**Probability click rate less than business threshold:** {13}")
+
