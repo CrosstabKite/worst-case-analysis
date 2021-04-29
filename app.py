@@ -10,15 +10,7 @@ want to use a Bayesian approach, so that our conclusions about the true click-ra
 the interpretation that matches most decision-makers' intuition.
 
 TODO
-- Add numeric outputs somewhere (maybe the control panel?)
-- Draw the worst-case threshold on the plot
-- Draw the worst-case probability as filled area on each of the plots
-- Draw the worst-case probability over time on the time series plot
-- Fill in the area for the credible region over time plot
-
-- Does it really add anything to have the user iterate through the days, since I have
-  the key outcomes over time?
-
+- Legends and explanatory text
 - Add text to explain how to provide the prior numbers
 - Increase font sizes of the axis labels and ticks
 - Format the tooltip
@@ -27,23 +19,6 @@ TODO
   it, i.e. with bubble sizes)
 - Think about whether to guide to Jeffreys priors/maximally noninformative priors
 - In the article, make a section for further reading
-
-NOTE
-- Possible additional plots
-    - Zoom on the posterior
-    - Distribution if the worst-case happens
-    - Posterior quantities (mean, credible interval) by experiment day
-
-- Additional feature brainstorm
-    - Compare two priors
-
-- Step through days of the experiment, or backward
-- Animate stepping through days of the experiment
-
-- Summary stats
-    - MAP estimate
-    - P(click rate less than threshold)
-    - E(click rate | click rate less than threshold)
 """
 
 import altair as alt
@@ -100,19 +75,20 @@ prior_sessions = st.sidebar.number_input(
     "Number of prior sessions", min_value=1, max_value=None, value=100, step=1
 )
 prior_click_rate = st.sidebar.slider(
-    "Prior click rate", min_value=0.01, max_value=0.5, value=0.1
+    "Prior click rate", min_value=0.01, max_value=0.5, value=0.1, step=0.005
 )
 
-st.sidebar.subheader("Go/no-go decision criteria")
+st.sidebar.subheader("Decision criteria")
 worst_case_threshold = st.sidebar.slider(
     "Worst-case click rate threshold",
     min_value=0.01,
     max_value=0.5,
     value=0.08,
+    step=0.005
 )
 
 worst_case_max_proba = st.sidebar.slider(
-    "Max acceptable worst-case probability", min_value=0.0, max_value=1.0, value=0.1
+    "Max acceptable worst-case probability", min_value=0.0, max_value=1.0, value=0.1, step=0.01
 )
 
 
@@ -177,37 +153,61 @@ fig = (
     )
 )
 
+threshold_rule = (
+    alt.Chart(pd.DataFrame({"x": [worst_case_threshold]})).mark_rule(size=2, color='red').encode(x="x")
+)
+
+worst_case_mass = prior_pdf[prior_pdf['click_rate'] < worst_case_threshold]
+worst_case_fig = (
+    alt.Chart(worst_case_mass)
+    .mark_area(opacity=0.5)
+    .encode(
+        x="click_rate",
+        y="prior_pdf"
+    )
+)
+
+fig = alt.layer(fig, threshold_rule, worst_case_fig)
 left_col.subheader("Prior belief about the click rate")
 left_col.altair_chart(fig, use_container_width=True)
 
 
 ## Draw the final posterior
-posterior_pdf = pd.DataFrame({
-    'click_rate': distro_grid,
-    'posterior_pdf': [posterior.pdf(x) for x in distro_grid]
-})
+posterior_pdf = pd.DataFrame(
+    {
+        "click_rate": distro_grid,
+        "posterior_pdf": [posterior.pdf(x) for x in distro_grid],
+    }
+)
 
 fig = (
     alt.Chart(posterior_pdf)
     .mark_line(size=4)
     .encode(
-        x=alt.X('click_rate', title="Click rate", scale=alt.Scale(domain=[0, xmax])),
-        y=alt.Y('posterior_pdf', title="Probability density"),
+        x=alt.X("click_rate", title="Click rate", scale=alt.Scale(domain=[0, xmax])),
+        y=alt.Y("posterior_pdf", title="Probability density"),
         tooltip=["click_rate", "posterior_pdf"],
     )
 )
 
+threshold_rule = (
+    alt.Chart(pd.DataFrame({"x": [worst_case_threshold]})).mark_rule(size=2, color='red').encode(x="x")
+)
+
+fig = alt.layer(fig, threshold_rule)
 left_col.subheader("Updated posterior belief about the click rate")
 left_col.altair_chart(fig, use_container_width=True)
 
 
 ## Draw the data
 base = alt.Chart(data).encode(
-    alt.X("day", title="Experiment day", scale=alt.Scale(domain=[0, num_experiment_days]))
+    alt.X(
+        "day", title="Experiment day", scale=alt.Scale(domain=[0, num_experiment_days])
+    )
 )
 
 volume_fig = base.mark_bar(color="orange").encode(
-    y=alt.Y('sessions', axis=alt.Axis(title="Number of sessions", titleColor="orange"))
+    y=alt.Y("sessions", axis=alt.Axis(title="Number of sessions", titleColor="orange"))
 )
 
 rate_fig = base.mark_line(size=4, color="blue").encode(
@@ -225,20 +225,38 @@ xmin = posterior.ppf(0.0001)
 xmax = posterior.ppf(0.9999)
 distro_grid = np.linspace(xmin, xmax, 300)
 
-posterior_pdf = pd.DataFrame({
-    'click_rate': distro_grid,
-    'posterior_pdf': [posterior.pdf(x) for x in distro_grid]
-})
+posterior_pdf = pd.DataFrame(
+    {
+        "click_rate": distro_grid,
+        "posterior_pdf": [posterior.pdf(x) for x in distro_grid],
+    }
+)
 
-fig = (
+distro_fig = (
     alt.Chart(posterior_pdf)
     .mark_line(size=4)
     .encode(
-        x=alt.X('click_rate', title="Click rate", scale=alt.Scale(domain=[xmin, xmax])),
-        y=alt.Y('posterior_pdf', title="Probability density"),
+        x=alt.X("click_rate", title="Click rate", scale=alt.Scale(domain=[xmin, xmax])),
+        y=alt.Y("posterior_pdf", title="Probability density"),
         tooltip=["click_rate", "posterior_pdf"],
     )
 )
+
+threshold_rule = (
+    alt.Chart(pd.DataFrame({"x": [worst_case_threshold]})).mark_rule(size=2, color='red').encode(x="x")
+)
+
+worst_case_mass = posterior_pdf[posterior_pdf['click_rate'] < worst_case_threshold]
+worst_case_fig = (
+    alt.Chart(worst_case_mass)
+    .mark_area(opacity=0.5)
+    .encode(
+        x="click_rate",
+        y="posterior_pdf"
+    )
+)
+
+fig = alt.layer(distro_fig, threshold_rule, worst_case_fig)
 
 middle_col.subheader("Zoomed-in posterior belief")
 middle_col.altair_chart(fig, use_container_width=True)
@@ -246,7 +264,7 @@ middle_col.altair_chart(fig, use_container_width=True)
 
 ## Draw key results over time
 results.reset_index(inplace=True)
-out = results.melt(id_vars=['index'])
+out = results.melt(id_vars=["index"])
 
 ts_mean = (
     alt.Chart(results)
@@ -257,33 +275,36 @@ ts_mean = (
     )
 )
 
-band = (
-    alt.Chart(results)
-    .mark_area(opacity=0.5)
-    .encode(
-        x='index',
-        y='q05',
-        y2='q95'
-    )
+band = alt.Chart(results).mark_area(opacity=0.5).encode(x="index", y="q05", y2="q95")
+
+threshold_rule = (
+    alt.Chart(pd.DataFrame({"y": [worst_case_threshold]})).mark_rule(size=2, color='red').encode(y="y")
 )
 
-fig = alt.layer(ts_mean, band)
+fig = alt.layer(ts_mean, band, threshold_rule)
 
 right_col.subheader("Posterior over time")
 right_col.altair_chart(fig, use_container_width=True)
 
 
 ## Write key outputs in the control panel
-right_col.subheader("Results")
+right_col.subheader("Results and decision")
 
-observed_sessions = data['sessions'].sum()
-observed_clicks = data['clicks'].sum()
+observed_sessions = data["sessions"].sum()
+observed_clicks = data["clicks"].sum()
 observed_click_rate = observed_clicks / observed_sessions
+worst_case_proba = posterior.cdf(worst_case_threshold)
 
-right_col.markdown(f"**Observed sessions:** {observed_sessions}")
-right_col.markdown(f"**Observed clicks:** {observed_clicks}")
-right_col.markdown(f"**Observed click rate:** {observed_click_rate}")
-right_col.markdown(f"**Most likely posterior click rate:** {17}")
-right_col.markdown(f"**Mean posterior click rate:** {results.loc[6]['mean']}")
-right_col.markdown(f"**90% credible region for click rate:** [{results.loc[6]['q05']}, {results.loc[6]['q95']}]")
-right_col.markdown(f"**Probability click rate less than business threshold:** {13}")
+if worst_case_proba < worst_case_max_proba:
+    decision = "GO"
+else:
+    decision = "NO GO"
+
+right_col.markdown(f"**Observed sessions:** {observed_sessions:,}")
+right_col.markdown(f"**Observed click rate:** {observed_click_rate:.4f}")
+right_col.markdown(f"**Mean posterior click rate:** {posterior.mean():.4f}")
+right_col.markdown(
+    f"**90% credible region for click rate:** [{posterior.ppf(0.05):.4f}, {posterior.ppf(0.95):.4f}]"
+)
+right_col.markdown(f"**P(click rate < than critical threshold):** {worst_case_proba:.2%}")
+right_col.subheader(f"***Final decision: {decision}***")
