@@ -16,19 +16,20 @@ TODO
 - Tooltips for observed data
 - Get the sessions volume histogram to line up properly (or think of another way to do
   it, i.e. with bubble sizes)
-- Think about whether to guide to Jeffreys priors/maximally noninformative priors
-- In the article, make a section for further reading
 """
 
 import altair as alt
+import copy
 import numpy as np
 import pandas as pd
 import scipy.stats as stats
 import streamlit as st
 
 
+alt.renderers.set_embed_options(scaleFactor=2)
+
+
 ## Basic setup and app layout
-rng = np.random.default_rng(17)
 st.set_page_config(layout="wide")  # this needs to be the first Streamlit command called
 st.title("Worst-Case Analysis for Feature Rollouts")
 st.sidebar.title("Control Panel")
@@ -43,20 +44,14 @@ def generate_data(click_rate, avg_daily_sessions, num_days):
     """Simulate session and click counts for some number of days."""
 
     sessions = stats.poisson.rvs(mu=avg_daily_sessions, size=num_days, random_state=rng)
-    clicks = np.array(
-        [
-            stats.binom.rvs(n=n, p=click_rate, size=1, random_state=rng)[0]
-            for n in sessions
-        ]
-    )
-    misses = sessions - clicks
+    clicks = stats.binom.rvs(n=sessions, p=click_rate, size=num_days, random_state=rng)
 
     data = pd.DataFrame(
         {
             "day": range(num_days),
             "sessions": sessions,
             "clicks": clicks,
-            "misses": misses,
+            "misses": sessions - clicks,
             "click_rate": clicks / sessions,
         }
     )
@@ -64,10 +59,9 @@ def generate_data(click_rate, avg_daily_sessions, num_days):
     return data
 
 
-num_experiment_days = 14
-data = generate_data(
-    click_rate=0.08, avg_daily_sessions=500, num_days=num_experiment_days
-)
+rng = np.random.default_rng(2)
+num_days = 14
+data = generate_data(click_rate=0.085, avg_daily_sessions=500, num_days=num_days)
 
 
 ## User inputs on the control panel
@@ -100,6 +94,7 @@ worst_case_max_proba = st.sidebar.slider(
 ## Define the prior
 prior_clicks = int(prior_sessions * prior_click_rate)
 prior_misses = prior_sessions - prior_clicks
+
 prior = stats.beta(prior_clicks, prior_misses)
 
 
@@ -107,30 +102,25 @@ prior = stats.beta(prior_clicks, prior_misses)
 # observed.
 results = pd.DataFrame(
     {
-        # 'mode': None,
-        "mean": None,
-        "q05": None,
-        "q95": None,
-        # 'worst_case_prob': None
+        "mean": [prior.mean()],
+        "q05": [prior.ppf(0.05)],
+        "q95": [prior.ppf(0.95)],
     },
-    index=range(-1, num_experiment_days),
+    index=[-1],
 )
 
-results.loc[-1] = {  # this is the prior, at index -1.
-    "mean": prior.mean(),
-    "q05": prior.ppf(0.05),
-    "q95": prior.ppf(0.95),
-}
+posterior = copy.copy(prior)
+assert(id(posterior) != id(prior))
 
-post_clicks = prior_clicks
-post_misses = prior_misses
+for t in range(num_days):
 
-for t in range(num_experiment_days):
-    post_clicks = post_clicks + data.loc[t, "clicks"]
-    post_misses = post_misses + data.loc[t, "misses"]
-    posterior = stats.beta(post_clicks, post_misses)
+    # This is the key posterior update logic, from the beta-binomial conjugate family.
+    posterior = stats.beta(
+        posterior.args[0] + data.loc[t, "clicks"],
+        posterior.args[1] + data.loc[t, "misses"]
+    )
 
-    results.loc[t] = {
+    results.at[t] = {
         "mean": posterior.mean(),
         "q05": posterior.ppf(0.05),
         "q95": posterior.ppf(0.95),
@@ -166,16 +156,21 @@ threshold_rule = (
     .encode(x="x")
 )
 
-worst_case_mass = prior_pdf[prior_pdf["click_rate"] < worst_case_threshold]
-worst_case_fig = (
-    alt.Chart(worst_case_mass)
+worst_case_prior_pdf = prior_pdf[prior_pdf["click_rate"] < worst_case_threshold]
+
+worst_case_area = (
+    alt.Chart(worst_case_prior_pdf)
     .mark_area(opacity=0.5)
     .encode(x="click_rate", y="prior_pdf")
 )
 
-fig = alt.layer(fig, threshold_rule, worst_case_fig).configure_axis(
+fig = alt.layer(fig, threshold_rule, worst_case_area).configure_axis(
     labelFontSize=tick_size, titleFontSize=axis_title_size
 )
+
+if st.util.env_util.is_repl():
+    fig.save("worst_case_prior.png")
+
 left_col.subheader("Prior belief about the click rate")
 left_col.altair_chart(fig, use_container_width=True)
 
@@ -207,6 +202,7 @@ threshold_rule = (
 fig = alt.layer(fig, threshold_rule).configure_axis(
     labelFontSize=tick_size, titleFontSize=axis_title_size
 )
+
 left_col.subheader("Updated posterior belief about the click rate")
 left_col.altair_chart(fig, use_container_width=True)
 
@@ -227,6 +223,9 @@ fig = (
     .resolve_scale(y="independent")
     .configure_axis(labelFontSize=tick_size, titleFontSize=axis_title_size)
 )
+
+if st.util.env_util.is_repl():
+    fig.save("worst_case_data.png")
 
 middle_col.subheader("Observed data")
 middle_col.altair_chart(fig, use_container_width=True)
@@ -260,16 +259,20 @@ threshold_rule = (
     .encode(x="x")
 )
 
-worst_case_mass = posterior_pdf[posterior_pdf["click_rate"] < worst_case_threshold]
-worst_case_fig = (
-    alt.Chart(worst_case_mass)
+worst_case_post_pdf = posterior_pdf[posterior_pdf["click_rate"] < worst_case_threshold]
+
+worst_case_area = (
+    alt.Chart(worst_case_post_pdf)
     .mark_area(opacity=0.5)
     .encode(x="click_rate", y="posterior_pdf")
 )
 
-fig = alt.layer(distro_fig, threshold_rule, worst_case_fig).configure_axis(
+fig = alt.layer(distro_fig, threshold_rule, worst_case_area).configure_axis(
     labelFontSize=tick_size, titleFontSize=axis_title_size
 )
+
+if st.util.env_util.is_repl():
+    fig.save("worst_case_posterior.png")
 
 middle_col.subheader("Zoomed-in posterior belief")
 middle_col.altair_chart(fig, use_container_width=True)
@@ -307,6 +310,9 @@ threshold_rule = (
 fig = alt.layer(ts_mean, band, threshold_rule).configure_axis(
     labelFontSize=tick_size, titleFontSize=axis_title_size
 )
+
+if st.util.env_util.is_repl():
+    fig.save("worst_case_posterior_ts.png")
 
 right_col.subheader("Posterior over time")
 right_col.altair_chart(fig, use_container_width=True)
