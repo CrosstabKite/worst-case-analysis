@@ -103,8 +103,8 @@ prior = stats.beta(prior_clicks, prior_misses)
 results = pd.DataFrame(
     {
         "mean": [prior.mean()],
-        "q05": [prior.ppf(0.05)],
-        "q95": [prior.ppf(0.95)],
+        "p05": [prior.ppf(0.05)],
+        "p95": [prior.ppf(0.95)],
     },
     index=[-1],
 )
@@ -122,8 +122,8 @@ for t in range(num_days):
 
     results.at[t] = {
         "mean": posterior.mean(),
-        "q05": posterior.ppf(0.05),
-        "q95": posterior.ppf(0.95),
+        "p05": posterior.ppf(0.05),
+        "p95": posterior.ppf(0.95),
     }
 
 
@@ -296,8 +296,8 @@ band = (
     .mark_area(opacity=0.5)
     .encode(
         x=alt.X("index", title="Experiment day"),
-        y=alt.Y("q05", title="Click rate"),
-        y2="q95",
+        y=alt.Y("p05", title="Click rate"),
+        y2="p95",
     )
 )
 
