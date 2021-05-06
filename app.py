@@ -9,13 +9,11 @@ to decide if we should proceed to the next stage. In this scenario, we want a
 want to use a Bayesian approach, so that our conclusions about the true click-rate have
 the interpretation that matches most decision-makers' intuition.
 
-TODO
-- Legends and explanatory text
-- Add text to explain how to provide the prior numbers
-- Format the tooltip
-- Tooltips for observed data
-- Get the sessions volume histogram to line up properly (or think of another way to do
-  it, i.e. with bubble sizes)
+NOTE
+- Figures are saved in SVG format if this script is run in a REPL instead of Streamlit.
+  It would be better to save directly to PNG, but I can't figure out how to control the
+  resolution of the Altair figure saver. This way, I can use Inkscape to convert to PNG
+  with the desired resolution.
 """
 
 import altair as alt
@@ -103,8 +101,8 @@ prior = stats.beta(prior_clicks, prior_misses)
 results = pd.DataFrame(
     {
         "mean": [prior.mean()],
-        "p05": [prior.ppf(0.05)],
-        "p95": [prior.ppf(0.95)],
+        "p10": [prior.ppf(0.1)],
+        "p90": [prior.ppf(0.9)],
     },
     index=[-1],
 )
@@ -122,8 +120,8 @@ for t in range(num_days):
 
     results.at[t] = {
         "mean": posterior.mean(),
-        "p05": posterior.ppf(0.05),
-        "p95": posterior.ppf(0.95),
+        "p10": posterior.ppf(0.1),
+        "p90": posterior.ppf(0.9),
     }
 
 
@@ -169,7 +167,7 @@ fig = alt.layer(fig, threshold_rule, worst_case_area).configure_axis(
 )
 
 if st.util.env_util.is_repl():
-    fig.save("worst_case_prior.png")
+    fig.save("worst_case_prior.svg")
 
 left_col.subheader("Prior belief about the click rate")
 left_col.altair_chart(fig, use_container_width=True)
@@ -203,7 +201,7 @@ fig = alt.layer(fig, threshold_rule).configure_axis(
     labelFontSize=tick_size, titleFontSize=axis_title_size
 )
 
-left_col.subheader("Updated posterior belief about the click rate")
+left_col.subheader("Posterior belief about the click rate")
 left_col.altair_chart(fig, use_container_width=True)
 
 
@@ -225,7 +223,7 @@ fig = (
 )
 
 if st.util.env_util.is_repl():
-    fig.save("worst_case_data.png")
+    fig.save("worst_case_data.svg")
 
 middle_col.subheader("Observed data")
 middle_col.altair_chart(fig, use_container_width=True)
@@ -272,7 +270,7 @@ fig = alt.layer(distro_fig, threshold_rule, worst_case_area).configure_axis(
 )
 
 if st.util.env_util.is_repl():
-    fig.save("worst_case_posterior.png")
+    fig.save("worst_case_posterior.svg")
 
 middle_col.subheader("Zoomed-in posterior belief")
 middle_col.altair_chart(fig, use_container_width=True)
@@ -296,8 +294,8 @@ band = (
     .mark_area(opacity=0.5)
     .encode(
         x=alt.X("index", title="Experiment day"),
-        y=alt.Y("p05", title="Click rate"),
-        y2="p95",
+        y=alt.Y("p10", title="Click rate"),
+        y2="p90",
     )
 )
 
@@ -312,7 +310,7 @@ fig = alt.layer(ts_mean, band, threshold_rule).configure_axis(
 )
 
 if st.util.env_util.is_repl():
-    fig.save("worst_case_posterior_ts.png")
+    fig.save("worst_case_posterior_ts.svg")
 
 right_col.subheader("Posterior over time")
 right_col.altair_chart(fig, use_container_width=True)
@@ -335,7 +333,7 @@ right_col.markdown(f"**Observed sessions:** {observed_sessions:,}")
 right_col.markdown(f"**Observed click rate:** {observed_click_rate:.4f}")
 right_col.markdown(f"**Mean posterior click rate:** {posterior.mean():.4f}")
 right_col.markdown(
-    f"**90% credible region for click rate:** [{posterior.ppf(0.05):.4f}, {posterior.ppf(0.95):.4f}]"
+    f"**80% credible region for click rate:** [{posterior.ppf(0.1):.4f}, {posterior.ppf(0.9):.4f}]"
 )
 right_col.markdown(
     f"**P(click rate < than critical threshold):** {worst_case_proba:.2%}"
