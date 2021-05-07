@@ -30,6 +30,7 @@ alt.renderers.set_embed_options(scaleFactor=2)
 ## Basic setup and app layout
 st.set_page_config(layout="wide")  # this needs to be the first Streamlit command called
 st.title("Worst-Case Analysis for Feature Rollouts")
+st.markdown("*Check out the [article](https://www.crosstab.io/articles/staged-rollout-analysis) for a detailed walk-through!*")
 st.sidebar.title("Control Panel")
 left_col, middle_col, right_col = st.beta_columns(3)
 
