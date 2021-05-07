@@ -65,10 +65,20 @@ data = generate_data(click_rate=0.085, avg_daily_sessions=500, num_days=num_days
 ## User inputs on the control panel
 st.sidebar.subheader("Prior belief about the click rate")
 prior_sessions = st.sidebar.number_input(
-    "Number of prior sessions", min_value=1, max_value=None, value=100, step=1
+    "Number of prior sessions",
+    min_value=1,
+    max_value=None,
+    value=100,
+    step=1,
+    help="The higher this number, the stronger your belief about the click rate before seeing the data.",
 )
 prior_click_rate = st.sidebar.slider(
-    "Prior click rate", min_value=0.01, max_value=0.5, value=0.1, step=0.005
+    "Prior click rate",
+    min_value=0.01,
+    max_value=0.5,
+    value=0.1,
+    step=0.005,
+    help="What you think the click rate is before beginning the experiment.",
 )
 
 st.sidebar.subheader("Decision criteria")
@@ -78,6 +88,7 @@ worst_case_threshold = st.sidebar.slider(
     max_value=0.5,
     value=0.08,
     step=0.005,
+    help="A click rate below this value is defined to be the worst-case scenario",
 )
 
 worst_case_max_proba = st.sidebar.slider(
@@ -86,6 +97,7 @@ worst_case_max_proba = st.sidebar.slider(
     max_value=1.0,
     value=0.1,
     step=0.01,
+    help="The larger this threshold, the more risk we're willing to accept that the worst-case scenario might happen.",
 )
 
 
@@ -108,14 +120,14 @@ results = pd.DataFrame(
 )
 
 posterior = copy.copy(prior)
-assert(id(posterior) != id(prior))
+assert id(posterior) != id(prior)
 
 for t in range(num_days):
 
     # This is the key posterior update logic, from the beta-binomial conjugate family.
     posterior = stats.beta(
         posterior.args[0] + data.loc[t, "clicks"],
-        posterior.args[1] + data.loc[t, "misses"]
+        posterior.args[1] + data.loc[t, "misses"],
     )
 
     results.at[t] = {
@@ -151,7 +163,7 @@ fig = (
 threshold_rule = (
     alt.Chart(pd.DataFrame({"x": [worst_case_threshold]}))
     .mark_rule(size=2, color="red")
-    .encode(x="x")
+    .encode(x="x", tooltip=[alt.Tooltip("x", title="Worst-case threshold")])
 )
 
 worst_case_prior_pdf = prior_pdf[prior_pdf["click_rate"] < worst_case_threshold]
@@ -187,14 +199,17 @@ fig = (
     .encode(
         x=alt.X("click_rate", title="Click rate", scale=alt.Scale(domain=[0, xmax])),
         y=alt.Y("posterior_pdf", title="Probability density"),
-        tooltip=["click_rate", "posterior_pdf"],
+        tooltip=[
+            alt.Tooltip("click_rate", title="Click rate", format=".3f"),
+            alt.Tooltip("posterior_pdf", title="Probability density", format=".3f"),
+        ],
     )
 )
 
 threshold_rule = (
     alt.Chart(pd.DataFrame({"x": [worst_case_threshold]}))
     .mark_rule(size=2, color="red")
-    .encode(x="x")
+    .encode(x="x", tooltip=[alt.Tooltip("x", title="Worst-case threshold")])
 )
 
 fig = alt.layer(fig, threshold_rule).configure_axis(
@@ -209,11 +224,15 @@ left_col.altair_chart(fig, use_container_width=True)
 base = alt.Chart(data).encode(alt.X("day", title="Experiment day"))
 
 volume_fig = base.mark_bar(color="#ffbb78", size=12).encode(
-    y=alt.Y("sessions", axis=alt.Axis(title="Number of sessions", titleColor="#ff7f0e"))
+    y=alt.Y(
+        "sessions", axis=alt.Axis(title="Number of sessions", titleColor="#ff7f0e")
+    ),
+    tooltip=[alt.Tooltip("sessions", title="Num sessions")],
 )
 
 rate_fig = base.mark_line(size=4).encode(
-    y=alt.Y("click_rate", axis=alt.Axis(title="Click rate", titleColor="#1f77b4"))
+    y=alt.Y("click_rate", axis=alt.Axis(title="Click rate", titleColor="#1f77b4")),
+    tooltip=[alt.Tooltip("click_rate", title="Click rate", format=".3f")],
 )
 
 fig = (
@@ -247,14 +266,17 @@ distro_fig = (
     .encode(
         x=alt.X("click_rate", title="Click rate", scale=alt.Scale(domain=[xmin, xmax])),
         y=alt.Y("posterior_pdf", title="Probability density"),
-        tooltip=["click_rate", "posterior_pdf"],
+        tooltip=[
+            alt.Tooltip("click_rate", title="Click rate", format=".3f"),
+            alt.Tooltip("posterior_pdf", title="Probability density", format=".3f"),
+        ],
     )
 )
 
 threshold_rule = (
     alt.Chart(pd.DataFrame({"x": [worst_case_threshold]}))
     .mark_rule(size=2, color="red", clip=True)
-    .encode(x="x")
+    .encode(x="x", tooltip=[alt.Tooltip("x", title="Worst-case threshold")])
 )
 
 worst_case_post_pdf = posterior_pdf[posterior_pdf["click_rate"] < worst_case_threshold]
@@ -296,6 +318,11 @@ band = (
         x=alt.X("index", title="Experiment day"),
         y=alt.Y("p10", title="Click rate"),
         y2="p90",
+        tooltip=[
+            alt.Tooltip("index", title="Experiment day"),
+            alt.Tooltip("p10", title="80% credible interval lower", format=".3f"),
+            alt.Tooltip("p90", title="80% credible interval upper", format=".3f"),
+        ],
     )
 )
 
@@ -326,8 +353,10 @@ worst_case_proba = posterior.cdf(worst_case_threshold)
 
 if worst_case_proba < worst_case_max_proba:
     decision = "GO"
+    emoji = "white_check_mark"
 else:
     decision = "NO GO"
+    emoji = "no_entry_sign"
 
 right_col.markdown(f"**Observed sessions:** {observed_sessions:,}")
 right_col.markdown(f"**Observed click rate:** {observed_click_rate:.4f}")
@@ -338,4 +367,4 @@ right_col.markdown(
 right_col.markdown(
     f"**P(click rate < than critical threshold):** {worst_case_proba:.2%}"
 )
-right_col.subheader(f"***Final decision: {decision}***")
+right_col.subheader(f"***Final decision:*** {decision} :{emoji}:")
