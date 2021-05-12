@@ -9,6 +9,9 @@ to decide if we should proceed to the next stage. In this scenario, we want a
 want to use a Bayesian approach, so that our conclusions about the true click-rate have
 the interpretation that matches most decision-makers' intuition.
 
+The Streamlit app code specifically is also discussed in this article:
+https://www.crosstab.io/articles/streamlit-review.
+
 NOTE
 - Figures are saved in SVG format if this script is run in a REPL instead of Streamlit.
   It would be better to save directly to PNG, but I can't figure out how to control the
@@ -30,12 +33,15 @@ alt.renderers.set_embed_options(scaleFactor=2)
 ## Basic setup and app layout
 st.set_page_config(layout="wide")  # this needs to be the first Streamlit command called
 st.title("Worst-Case Analysis for Feature Rollouts")
-st.markdown("*Check out the [article](https://www.crosstab.io/articles/staged-rollout-analysis) for a detailed walk-through!*")
+st.markdown(
+    "*Check out the [article](https://www.crosstab.io/articles/staged-rollout-analysis) for a detailed walk-through!*"
+)
 st.sidebar.title("Control Panel")
 left_col, middle_col, right_col = st.beta_columns(3)
 
 tick_size = 12
 axis_title_size = 16
+
 
 ## Simulate data and the distribution domain
 @st.cache
